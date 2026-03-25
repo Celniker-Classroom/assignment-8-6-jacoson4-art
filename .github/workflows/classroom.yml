@@ -1,0 +1,341 @@
+name: Unit 8.6 Autograding (Functions)
+
+on:
+  push:
+  workflow_dispatch:
+
+jobs:
+  autograde:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+
+      # Install Jest + jsdom
+      - name: Install test deps
+        run: |
+          npm init -y >/dev/null 2>&1 || true
+          npm install --save-dev jest@29 jsdom@21 jest-environment-jsdom@29
+
+      # Jest setup (TextEncoder/Decoder for Node 20)
+      - name: Write jest setup
+        run: |
+          cat > jest.setup.cjs <<'EOF'
+          const { TextEncoder, TextDecoder } = require('util');
+          if (typeof global.TextEncoder === 'undefined') global.TextEncoder = TextEncoder;
+          if (typeof global.TextDecoder === 'undefined') global.TextDecoder = TextDecoder;
+          EOF
+
+      # Jest config
+      - name: Write jest config
+        run: |
+          cat > jest.config.cjs <<'EOF'
+          module.exports = {
+            testEnvironment: 'jsdom',
+            setupFiles: ['<rootDir>/jest.setup.cjs'],
+            testMatch: ['**/__tests__/**/*.test.cjs']
+          };
+          EOF
+
+      # Write test file
+      - name: Write tests
+        run: |
+          mkdir -p __tests__
+          cat > __tests__/functions-8_6.test.cjs <<'EOF'
+          const fs = require('fs');
+          const path = require('path');
+          const { JSDOM, VirtualConsole } = require('jsdom');
+
+          const wait = (ms=50) => new Promise(r => setTimeout(r, ms));
+          const find = arr => arr.find(p => fs.existsSync(p)) || null;
+          const findIndex = () => find(['index.html','public/index.html','src/index.html','docs/index.html']);
+
+          function byId(doc, id) { return doc.getElementById(id); }
+          function text(doc, id) {
+            const el = byId(doc, id);
+            return (el?.textContent || el?.innerText || '').trim();
+          }
+          function setVal(doc, id, v) {
+            const el = byId(doc, id); if (!el) return false; el.value = String(v); return true;
+          }
+          function click(doc, id) { byId(doc, id)?.click(); }
+
+          async function loadDOM() {
+            const idx = findIndex();
+            if (!idx) throw new Error('index.html not found (root/public/src/docs).');
+
+            const vconsole = new VirtualConsole();
+            vconsole.on('error', () => {});
+
+            const baseDir = path.dirname(path.resolve(idx));
+            const baseUrl = 'file://' + baseDir.replace(/\\+/g, '/') + '/';
+
+            const dom = await JSDOM.fromFile(idx, {
+              url: baseUrl,
+              runScripts: 'dangerously',
+              resources: 'usable',
+              pretendToBeVisual: true,
+              virtualConsole: vconsole
+            });
+
+            dom.window.prompt = () => { throw new Error('Use inputs, not prompt().'); };
+            dom.window.alert  = () => { throw new Error('Use textContent, not alert().'); };
+
+            await new Promise(res => dom.window.addEventListener('load', res, { once: true }));
+            await wait();
+            return dom;
+          }
+
+          describe('Unit 8.6 – Functions', () => {
+            let dom, window, document;
+
+            beforeAll(async () => {
+              dom = await loadDOM();
+              window = dom.window;
+              document = window.document;
+            });
+
+            test('required elements exist', () => {
+              const buttons = ['btnMyFunc','btnRandom','btnAdder','btnDistance','btnQuadratic'];
+              const inputs  = ['maxRand','addX','addY','x1','y1','x2','y2','qa','qb','qc'];
+              const outputs = ['outMyFunc','outRandom','outAdder','outDistance','outQuadratic'];
+
+              [...buttons, ...inputs, ...outputs].forEach(id =>
+                expect(document.getElementById(id)).not.toBeNull()
+              );
+            });
+
+            test('myFunc increments a persistent counter', async () => {
+              click(document, 'btnMyFunc'); await wait();
+              const first = text(document, 'outMyFunc');
+              click(document, 'btnMyFunc'); await wait();
+              const second = text(document, 'outMyFunc');
+              click(document, 'btnMyFunc'); await wait();
+              const third = text(document, 'outMyFunc');
+
+              const n1 = parseFloat(first);
+              const n2 = parseFloat(second);
+              const n3 = parseFloat(third);
+              expect(n2).toBe(n1 + 1);
+              expect(n3).toBe(n2 + 1);
+            });
+
+            test('getRandomNum returns value in range or 0', async () => {
+              setVal(document, 'maxRand', '5');
+              click(document, 'btnRandom'); await wait();
+              const val = parseFloat(text(document, 'outRandom'));
+              expect(val).toBeGreaterThanOrEqual(0);
+              expect(val).toBeLessThanOrEqual(5);
+
+              // invalid input should return 0
+              setVal(document, 'maxRand', '-3');
+              click(document, 'btnRandom'); await wait();
+              const invalid = parseFloat(text(document, 'outRandom'));
+              expect(invalid).toBe(0);
+            });
+
+            test('myAdder returns correct sum', async () => {
+              setVal(document, 'addX', '7');
+              setVal(document, 'addY', '13');
+              click(document, 'btnAdder'); await wait();
+              const sum = parseFloat(text(document, 'outAdder'));
+              expect(sum).toBe(20);
+            });
+
+            test('distance calculates correctly', async () => {
+              setVal(document, 'x1', '0');
+              setVal(document, 'y1', '0');
+              setVal(document, 'x2', '3');
+              setVal(document, 'y2', '4');
+              click(document, 'btnDistance'); await wait();
+              const d = parseFloat(text(document, 'outDistance'));
+              expect(d).toBeCloseTo(5, 1);
+            });
+
+            test('quadratic solves real roots', async () => {
+              // x^2 - 5x + 6 = 0 => roots 2 and 3
+              setVal(document, 'qa', '1');
+              setVal(document, 'qb', '-5');
+              setVal(document, 'qc', '6');
+              click(document, 'btnQuadratic'); await wait();
+              const result = text(document, 'outQuadratic');
+              expect(result).toMatch(/2/);
+              expect(result).toMatch(/3/);
+            });
+
+            test('quadratic handles negative discriminant', async () => {
+              // x^2 + 1 = 0 => complex roots
+              setVal(document, 'qa', '1');
+              setVal(document, 'qb', '0');
+              setVal(document, 'qc', '1');
+              click(document, 'btnQuadratic'); await wait();
+              const result = text(document, 'outQuadratic');
+              // Should contain 'i' for imaginary
+              expect(result.toLowerCase()).toMatch(/i/);
+            });
+          });
+          EOF
+
+      # === Individual graded runs ===
+      - id: t_required
+        name: required elements exist
+        uses: classroom-resources/autograding-command-grader@v1
+        with:
+          test-name: required elements exist
+          setup-command: echo "ready"
+          command: npx jest --runInBand --testNamePattern ".*required elements exist$"
+          timeout: 60
+          max-score: 10
+
+      - id: t_counter
+        name: myFunc persistent counter
+        uses: classroom-resources/autograding-command-grader@v1
+        with:
+          test-name: myFunc persistent counter
+          setup-command: echo "ready"
+          command: npx jest --runInBand --testNamePattern ".*myFunc increments a persistent counter$"
+          timeout: 60
+          max-score: 15
+
+      - id: t_random
+        name: getRandomNum range or 0
+        uses: classroom-resources/autograding-command-grader@v1
+        with:
+          test-name: getRandomNum range or 0
+          setup-command: echo "ready"
+          command: npx jest --runInBand --testNamePattern ".*getRandomNum returns value in range or 0$"
+          timeout: 60
+          max-score: 15
+
+      - id: t_adder
+        name: myAdder correct sum
+        uses: classroom-resources/autograding-command-grader@v1
+        with:
+          test-name: myAdder correct sum
+          setup-command: echo "ready"
+          command: npx jest --runInBand --testNamePattern ".*myAdder returns correct sum$"
+          timeout: 60
+          max-score: 15
+
+      - id: t_distance
+        name: distance calculates correctly
+        uses: classroom-resources/autograding-command-grader@v1
+        with:
+          test-name: distance calculates correctly
+          setup-command: echo "ready"
+          command: npx jest --runInBand --testNamePattern ".*distance calculates correctly$"
+          timeout: 60
+          max-score: 20
+
+      - id: t_quadratic_real
+        name: quadratic solves real roots
+        uses: classroom-resources/autograding-command-grader@v1
+        with:
+          test-name: quadratic solves real roots
+          setup-command: echo "ready"
+          command: npx jest --runInBand --testNamePattern ".*quadratic solves real roots$"
+          timeout: 60
+          max-score: 15
+
+      - id: t_quadratic_complex
+        name: quadratic handles complex roots
+        uses: classroom-resources/autograding-command-grader@v1
+        with:
+          test-name: quadratic handles complex roots
+          setup-command: echo "ready"
+          command: npx jest --runInBand --testNamePattern ".*quadratic handles negative discriminant$"
+          timeout: 60
+          max-score: 10
+
+      # === Prepare reporter env ===
+      - name: Prepare reporter env
+        id: prepEnv
+        shell: bash
+        run: |
+          echo "T_REQUIRED_RESULTS=${{ steps.t_required.outputs.result }}"           >> "$GITHUB_ENV"
+          echo "T_COUNTER_RESULTS=${{ steps.t_counter.outputs.result }}"             >> "$GITHUB_ENV"
+          echo "T_RANDOM_RESULTS=${{ steps.t_random.outputs.result }}"               >> "$GITHUB_ENV"
+          echo "T_ADDER_RESULTS=${{ steps.t_adder.outputs.result }}"                 >> "$GITHUB_ENV"
+          echo "T_DISTANCE_RESULTS=${{ steps.t_distance.outputs.result }}"           >> "$GITHUB_ENV"
+          echo "T_QUADRATIC_REAL_RESULTS=${{ steps.t_quadratic_real.outputs.result }}" >> "$GITHUB_ENV"
+          echo "T_QUADRATIC_COMPLEX_RESULTS=${{ steps.t_quadratic_complex.outputs.result }}" >> "$GITHUB_ENV"
+
+      # === Combined summary ===
+      - name: Build & publish combined summary
+        shell: bash
+        run: |
+          node - <<'NODE'
+          const fs = require('fs');
+
+          const tests = [
+            { key: 'REQUIRED',          label: 'required elements exist',                weight: 10 },
+            { key: 'COUNTER',           label: 'myFunc persistent counter',              weight: 15 },
+            { key: 'RANDOM',            label: 'getRandomNum range or 0',                weight: 15 },
+            { key: 'ADDER',             label: 'myAdder correct sum',                    weight: 15 },
+            { key: 'DISTANCE',          label: 'distance calculates correctly',          weight: 20 },
+            { key: 'QUADRATIC_REAL',    label: 'quadratic solves real roots',            weight: 15 },
+            { key: 'QUADRATIC_COMPLEX', label: 'quadratic handles complex roots',        weight: 10 },
+          ];
+
+          let total = 0;
+          let earned = 0;
+          const lines = ["# Unit 8.6 Autograder Summary", ""];
+
+          for (const t of tests) {
+            total += t.weight;
+            const envName = `T_${t.key}_RESULTS`;
+            const raw = process.env[envName] || "";
+            let passed = false;
+
+            try {
+              let decoded;
+              try {
+                decoded = Buffer.from(raw, 'base64').toString('utf8');
+              } catch {
+                decoded = raw;
+              }
+
+              const obj = JSON.parse(decoded);
+              const status = (obj.status || "").toString().toLowerCase();
+
+              if (status === 'pass' || status === 'passed') {
+                passed = true;
+              } else if (Array.isArray(obj.tests)) {
+                passed = obj.tests.some(
+                  (test) =>
+                    (test.status || "").toString().toLowerCase() === 'pass' ||
+                    (test.status || "").toString().toLowerCase() === 'passed'
+                );
+              }
+            } catch (e) {}
+
+            if (passed) {
+              earned += t.weight;
+              lines.push(`✅ ${t.label} (${t.weight} pts)`);
+            } else {
+              lines.push(`❌ ${t.label} (${t.weight} pts)`);
+            }
+          }
+
+          lines.push("");
+          lines.push(`**Score: ${earned}/${total}**`);
+
+          const summaryPath = process.env.GITHUB_STEP_SUMMARY;
+          if (summaryPath) {
+            fs.appendFileSync(summaryPath, lines.join("\n") + "\n");
+          } else {
+            console.log(lines.join("\n"));
+          }
+          NODE
+
+      # === Report to Classroom ===
+      - name: Report grades
+        uses: classroom-resources/autograding-grading-reporter@v1
+        with:
+          runners: 't_required,t_counter,t_random,t_adder,t_distance,t_quadratic_real,t_quadratic_complex'
+          token: ${{ github.token }}

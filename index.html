@@ -1,0 +1,44 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Unit 8.6 – Functions</title>
+</head>
+<body>
+  <h1>Unit 8.6 – Functions</h1>
+  <p>Each button calls a function and shows the result below using <code>textContent</code>.</p>
+
+  <h3>myFunc()</h3>
+  <button id="btnMyFunc" onclick="onMyFuncClick()">Click Me</button>
+  <div id="outMyFunc"></div>
+
+  <h3>getRandomNum(max)</h3>
+  <label for="maxRand">Enter a max value:</label>
+  <input id="maxRand" type="number" />
+  <button id="btnRandom" onclick="onRandomClick()">Generate Random</button>
+  <div id="outRandom"></div>
+
+  <h3>myAdder(x, y)</h3>
+  <label>x: <input id="addX" type="number" /></label>
+  <label>y: <input id="addY" type="number" /></label>
+  <button id="btnAdder" onclick="onAdderClick()">Add</button>
+  <div id="outAdder"></div>
+
+  <h3>distance(x1, y1, x2, y2)</h3>
+  <label>x1: <input id="x1" type="number" /></label>
+  <label>y1: <input id="y1" type="number" /></label>
+  <label>x2: <input id="x2" type="number" /></label>
+  <label>y2: <input id="y2" type="number" /></label>
+  <button id="btnDistance" onclick="onDistanceClick()">Find Distance</button>
+  <div id="outDistance"></div>
+
+  <h3>quadratic(a, b, c)</h3>
+  <label>a: <input id="qa" type="number" /></label>
+  <label>b: <input id="qb" type="number" /></label>
+  <label>c: <input id="qc" type="number" /></label>
+  <button id="btnQuadratic" onclick="onQuadraticClick()">Solve</button>
+  <div id="outQuadratic"></div>
+
+  <script src="script.js"></script>
+</body>
+</html>
